@@ -9,14 +9,18 @@ from langchain_community.vectorstores import FAISS
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 
 
-DEFAULT_DATA_PATH = os.path.join("Data", "aos_core_rules_text_clean.md")
-DEFAULT_INDEX_DIR = os.path.join("Data", "aos_aos_core_rules_faiss_index")
+# Default data/index locations per game system
+DEFAULT_AOS_DATA_PATH = os.path.join("Data", "aos_core_rules_text_clean.md")
+DEFAULT_AOS_INDEX_DIR = os.path.join("Data", "aos_core_rules_faiss_index")
+
+DEFAULT_WH40K_DATA_PATH = os.path.join("Data", "wh40k_core_rules_text_clean.md")
+DEFAULT_WH40K_INDEX_DIR = os.path.join("Data", "wh40k_core_rules_faiss_index")
 
 
 EXAMPLE_SYSTEM_PROMPT = """
-You are a rules explainer for Warhammer Age of Sigmar.
+You are a rules explainer for Warhammer tabletop games.
 
-You answer questions ONLY using the provided rules text from the core rules. DO NOT use any other information or context. If the question is not related to the rules, say so.
+You answer questions ONLY using the provided rules text from the selected game's core rules. DO NOT use any other information or context. If the question is not related to the rules, say so.
 
 Guidelines:
 - If the rules text clearly answers the question, quote or closely paraphrase the relevant passages.
@@ -32,8 +36,8 @@ Explain specialised terms briefly when they are important to the answer.
 
 
 def build_index(
-    data_path: str = DEFAULT_DATA_PATH,
-    index_dir: str = DEFAULT_INDEX_DIR,
+    data_path: str,
+    index_dir: str,
     chunk_size: int = 1200,
     chunk_overlap: int = 200,
 ) -> None:
@@ -70,7 +74,7 @@ def build_index(
     print(f"Saved FAISS index to: {index_dir}")
 
 
-def load_index(index_dir: str = DEFAULT_INDEX_DIR) -> FAISS:
+def load_index(index_dir: str) -> FAISS:
     """
     Load a previously built FAISS index from disk.
     """
@@ -104,6 +108,7 @@ def answer_question(
     question: str,
     system_prompt: str,
     vectorstore: FAISS,
+    game_label: str,
     model_name: str = "gpt-5-nano",
     k: int = 4,
 ) -> str:
@@ -123,11 +128,11 @@ def answer_question(
     messages = [
         (
             "system",
-            system_prompt,
+            f"{system_prompt}\n\nYou are currently answering rules questions for {game_label}.",
         ),
         (
             "system",
-            "Here is the relevant rules context from the Warhammer Age of Sigmar core rules. "
+            "Here is the relevant rules context from the selected game's core rules. "
             "Only use information that appears here when answering.\n\n"
             f"{joined_context}",
         ),
@@ -143,30 +148,45 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(
         description=(
-            "Ask Warhammer Age of Sigmar core rules questions using "
+            "Ask Warhammer core rules questions (AoS or 40K) using "
             "LangChain embeddings + FAISS + OpenAI (gpt-5-nano)."
         )
+    )
+
+    parser.add_argument(
+        "--game",
+        type=str,
+        choices=["aos", "wh40k"],
+        required=True,
+        help=(
+            "Which ruleset to use: 'aos' for Warhammer Age of Sigmar "
+            "or 'wh40k' for Warhammer 40,000."
+        ),
     )
 
     parser.add_argument(
         "--build-index",
         action="store_true",
         help=(
-            "Build (or rebuild) the FAISS index from the cleaned AoS core rules "
-            f"markdown. Default input: {DEFAULT_DATA_PATH}"
+            "Build (or rebuild) the FAISS index from the cleaned core rules "
+            "markdown for the selected game."
         ),
     )
     parser.add_argument(
         "--data-path",
         type=str,
-        default=DEFAULT_DATA_PATH,
-        help="Path to the cleaned AoS core rules markdown file.",
+        help=(
+            "Override the default cleaned core rules markdown path for the selected game. "
+            "If omitted, a sensible default per game is used."
+        ),
     )
     parser.add_argument(
         "--index-dir",
         type=str,
-        default=DEFAULT_INDEX_DIR,
-        help="Directory to store / load the FAISS index.",
+        help=(
+            "Override the directory to store / load the FAISS index. "
+            "If omitted, a sensible default per game is used."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -192,14 +212,27 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    # Resolve data/index paths based on selected game and optional overrides.
+    if args.game == "aos":
+        default_data = DEFAULT_AOS_DATA_PATH
+        default_index = DEFAULT_AOS_INDEX_DIR
+        game_label = "Warhammer Age of Sigmar"
+    else:
+        default_data = DEFAULT_WH40K_DATA_PATH
+        default_index = DEFAULT_WH40K_INDEX_DIR
+        game_label = "Warhammer 40,000"
+
+    data_path = args.data_path or default_data
+    index_dir = args.index_dir or default_index
+
     if args.build_index:
-        build_index(data_path=args.data_path, index_dir=args.index_dir)
+        build_index(data_path=data_path, index_dir=index_dir)
         # If the user only wanted to build the index, we can exit early.
         if not args.question:
             return 0
 
     # Load FAISS index for question answering
-    vectorstore = load_index(index_dir=args.index_dir)
+    vectorstore = load_index(index_dir=index_dir)
 
     system_prompt = args.system_prompt
     model_name = args.model
@@ -210,6 +243,7 @@ def main() -> int:
             question=args.question,
             system_prompt=system_prompt,
             vectorstore=vectorstore,
+            game_label=game_label,
             model_name=model_name,
         )
         print("\n=== Answer ===\n")
@@ -217,7 +251,7 @@ def main() -> int:
         return 0
 
     # Interactive CLI loop
-    print("AoS Rules Q&A (LangChain + FAISS + OpenAI)")
+    print(f"{game_label} Rules Q&A (LangChain + FAISS + OpenAI)")
     print("Type 'exit', 'quit', or Ctrl+C to stop.")
 
     while True:
@@ -237,6 +271,7 @@ def main() -> int:
             question=user_q,
             system_prompt=system_prompt,
             vectorstore=vectorstore,
+            game_label=game_label,
             model_name=model_name,
         )
         print("\n--- Answer ---\n")
