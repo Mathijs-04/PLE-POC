@@ -109,7 +109,7 @@ def answer_question(
     system_prompt: str,
     vectorstore: FAISS,
     game_label: str,
-    model_name: str = "gpt-5-nano",
+    model_name: str = "gpt-4o-mini",
     k: int = 4,
 ) -> str:
     """
@@ -191,8 +191,8 @@ def main() -> int:
     parser.add_argument(
         "--model",
         type=str,
-        default="gpt-5-nano",
-        help="Chat model to use (e.g. gpt-5-nano).",
+        default="gpt-4o-mini",
+        help="Chat model to use (e.g. gpt-4o-mini).",
     )
     parser.add_argument(
         "--system-prompt",
