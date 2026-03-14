@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 from typing import List
 
 from dotenv import load_dotenv
@@ -29,6 +30,11 @@ Guidelines:
   and clearly state what is missing rather than inventing rules.
 - Do NOT reference page numbers unless they are explicitly present in the provided context.
 - Be concise, but do not omit important conditions or exceptions.
+
+When the user names a specific unit, ability, or keyword (for example, a unit name in a battle profile table):
+- Prioritise any context snippets that mention that exact name (case-insensitive).
+- Pay particular attention to short "notes" style sentences such as "This unit cannot be reinforced."
+- If such a sentence is present in the context, treat it as authoritative for the question.
 
 Assume the user is familiar with basic tabletop gaming, but not necessarily all Age of Sigmar jargon.
 Explain specialised terms briefly when they are important to the answer.
@@ -104,24 +110,92 @@ def retrieve_context(
     return [d.page_content for d in docs]
 
 
+def _extract_candidate_phrases(question: str) -> List[str]:
+    """
+    Heuristic extraction of proper-noun-like phrases from the user's question,
+    e.g. "Freeguild Command Corps".
+    """
+    # Look for 2+ consecutive capitalised words.
+    pattern = re.compile(r"([A-Z][A-Za-z]+(?: [A-Z][A-Za-z]+)+)")
+    phrases = [m.group(1).strip() for m in pattern.finditer(question)]
+
+    # Deduplicate while preserving order and drop very short phrases.
+    seen = set()
+    result: List[str] = []
+    for p in phrases:
+        key = p.lower()
+        if len(p) < 4 or key in seen:
+            continue
+        seen.add(key)
+        result.append(p)
+    return result
+
+
+def _find_keyword_snippets(
+    full_text: str,
+    phrases: List[str],
+    max_snippets: int = 2,
+    window: int = 400,
+) -> List[str]:
+    """
+    Lightweight keyword-based lookup into the full rules text.
+
+    For each candidate phrase, find the first occurrence (case-insensitive)
+    and return a small window of surrounding text as a snippet.
+
+    This is designed to improve recall for specific unit/ability lookups
+    without significantly increasing token usage.
+    """
+    text_lower = full_text.lower()
+    snippets: List[str] = []
+
+    for phrase in phrases:
+        if len(snippets) >= max_snippets:
+            break
+        needle = phrase.lower()
+        idx = text_lower.find(needle)
+        if idx == -1:
+            continue
+
+        start = max(0, idx - window // 2)
+        end = min(len(full_text), idx + len(phrase) + window // 2)
+        snippet = full_text[start:end].strip()
+        if not snippet:
+            continue
+
+        snippets.append(snippet)
+
+    return snippets
+
+
 def answer_question(
     question: str,
     system_prompt: str,
     vectorstore: FAISS,
     game_label: str,
     # model_name: str = "gpt-4o-mini",
-    # model_name: str = "gpt-5-nano",
-    # model_name: str = "gpt-5-mini",
     model_name: str = "gpt-5.4",
     k: int = 4,
+    full_rules_text: str | None = None,
 ) -> str:
     """
     Retrieve relevant rules text and ask the OpenAI chat model
     to answer the user's question based only on that context.
     """
-    context_snippets = retrieve_context(vectorstore, question, k=k)
+    # Slightly higher k for better recall, but still modest to avoid
+    # large context windows by default.
+    context_snippets = retrieve_context(vectorstore, question, k=max(k, 6))
 
-    joined_context = "\n\n---\n\n".join(context_snippets)
+    # Optional keyword-based lookup for specific units/abilities to
+    # augment the embedding-based retrieval without many extra tokens.
+    keyword_snippets: List[str] = []
+    if full_rules_text:
+        phrases = _extract_candidate_phrases(question)
+        if phrases:
+            keyword_snippets = _find_keyword_snippets(full_rules_text, phrases)
+
+    all_snippets: List[str] = context_snippets + keyword_snippets
+    joined_context = "\n\n---\n\n".join(all_snippets)
 
     llm = ChatOpenAI(
         model=model_name,
@@ -230,6 +304,7 @@ def main() -> int:
     data_path = args.data_path or default_data
     index_dir = args.index_dir or default_index
 
+    # If requested, (re)build the index from the specified markdown.
     if args.build_index:
         build_index(data_path=data_path, index_dir=index_dir)
         # If the user only wanted to build the index, we can exit early.
@@ -238,6 +313,14 @@ def main() -> int:
 
     # Load FAISS index for question answering
     vectorstore = load_index(index_dir=index_dir)
+
+    # Load the full rules text once so we can do lightweight keyword-based
+    # lookups to augment retrieval without extra network/token cost.
+    try:
+        with open(data_path, "r", encoding="utf-8") as f:
+            full_rules_text = f.read()
+    except OSError:
+        full_rules_text = None
 
     system_prompt = args.system_prompt
     model_name = args.model
@@ -250,6 +333,7 @@ def main() -> int:
             vectorstore=vectorstore,
             game_label=game_label,
             model_name=model_name,
+            full_rules_text=full_rules_text,
         )
         print("\n=== Answer ===\n")
         print(answer)
@@ -278,6 +362,7 @@ def main() -> int:
             vectorstore=vectorstore,
             game_label=game_label,
             model_name=model_name,
+            full_rules_text=full_rules_text,
         )
         print("\n--- Answer ---\n")
         print(answer)
