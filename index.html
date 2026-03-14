@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Warhammer Rules Q&A</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        margin: 0;
+        padding: 1.5rem;
+        background: #f5f5f5;
+      }
+
+      .app {
+        max-width: 800px;
+        margin: 0 auto;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
+      }
+
+      h1 {
+        margin-top: 0;
+        font-size: 1.5rem;
+      }
+
+      .field {
+        margin-bottom: 1rem;
+      }
+
+      .field label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.25rem;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 100px;
+        padding: 0.5rem;
+        font: inherit;
+        resize: vertical;
+      }
+
+      .game-toggle {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+      }
+
+      .actions {
+        margin-top: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+      }
+
+      button {
+        padding: 0.5rem 1.25rem;
+        font: inherit;
+        border-radius: 4px;
+        border: 1px solid #2563eb;
+        background: #2563eb;
+        color: white;
+        cursor: pointer;
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+
+      .status {
+        font-size: 0.9rem;
+        color: #555;
+      }
+
+      .response {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+        border-top: 1px solid #e5e7eb;
+        white-space: pre-wrap;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <h1>Warhammer Rules Q&amp;A</h1>
+
+      <div class="field">
+        <label for="question">Question</label>
+        <textarea id="question" placeholder="Type your rules question here..."></textarea>
+      </div>
+
+      <div class="field">
+        <label>Game</label>
+        <div class="game-toggle">
+          <label>
+            <input type="radio" name="game" value="aos" checked />
+            Age of Sigmar
+          </label>
+          <label>
+            <input type="radio" name="game" value="wh40k" />
+            Warhammer 40,000
+          </label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="send-btn">Ask</button>
+        <div id="status" class="status"></div>
+      </div>
+
+      <div id="response" class="response"></div>
+    </div>
+
+    <script>
+      const questionEl = document.getElementById("question");
+      const sendBtn = document.getElementById("send-btn");
+      const statusEl = document.getElementById("status");
+      const responseEl = document.getElementById("response");
+
+      async function askQuestion() {
+        const question = questionEl.value.trim();
+        if (!question) {
+          statusEl.textContent = "Please enter a question.";
+          return;
+        }
+
+        const gameInput = document.querySelector('input[name="game"]:checked');
+        const game = gameInput ? gameInput.value : "aos";
+
+        sendBtn.disabled = true;
+        statusEl.textContent = "Thinking...";
+        responseEl.textContent = "";
+
+        try {
+          const res = await fetch("http://127.0.0.1:8000/ask", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ game, question }),
+          });
+
+          if (!res.ok) {
+            const err = await res.json().catch(() => null);
+            const msg = err && err.detail ? err.detail : res.statusText;
+            throw new Error(msg || "Request failed");
+          }
+
+          const data = await res.json();
+          responseEl.textContent = data.answer || "";
+          statusEl.textContent = "";
+        } catch (err) {
+          console.error(err);
+          statusEl.textContent = "Error: " + (err.message || "something went wrong");
+        } finally {
+          sendBtn.disabled = false;
+        }
+      }
+
+      sendBtn.addEventListener("click", askQuestion);
+      questionEl.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          askQuestion();
+        }
+      });
+    </script>
+  </body>
+  </html>
+
