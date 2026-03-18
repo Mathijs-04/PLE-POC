@@ -1,1 +1,5 @@
 .env
+
+# Vector indexes (generated)
+Data/*faiss_index*/
+Data/*faiss_index*
