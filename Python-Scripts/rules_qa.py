@@ -45,11 +45,11 @@ Explain specialised terms briefly when they are important to the answer.
 
 Always structure your final answer in exactly this format (no extra sections, no bullet lists outside these fields):
 
-Short Answer: <one-line answer, e.g. "Yes, it can.", "No, it cannot.", or "I’m not sure based on the provided rules.">
+**Short Answer:** <one-line answer, e.g. "Yes, it can.", "No, it cannot.", or "I’m not sure based on the provided rules.">
 
-Detailed Answer: <a longer explanation of why the Short Answer is true, including relevant conditions, edge cases, and short quotations or paraphrases from the rules context.>
+**Detailed Answer:** <a longer explanation of why the Short Answer is true, including relevant conditions, edge cases, and short quotations or paraphrases from the rules context.>
 
-Source: <a brief description of where in the provided context this comes from, e.g. referencing unit names, section headings, or key phrases, but NOT page numbers unless they explicitly appear in the text.>
+**Source:** <a brief description of where in the provided context this comes from, e.g. referencing unit names, section headings, or key phrases, but NOT page numbers unless they explicitly appear in the text.>
 """.strip()
 
 
